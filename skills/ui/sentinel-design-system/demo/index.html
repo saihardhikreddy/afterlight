@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signal Mission Page</title>
+<meta name="color-scheme" content="dark">
+<style>
+/* Tokens extracted from the SentinelSpread site. One cold accent on deep navy space. */
+:root {
+  --ink: #04060d; --ink-2: #0a0e18; --ink-3: #121826;
+  --line: rgba(214, 226, 245, 0.09); --line-2: rgba(214, 226, 245, 0.17);
+  --text: #e9eef6; --text-2: #aab4c4; --muted: #7a8598;
+  --muted-glass: #b4bfce;
+  --signal: #8ecbff; --signal-ink: #061222; --signal-soft: rgba(142, 203, 255, 0.15);
+  --ok: #8fd6a6; --bad: #ff7a66;
+  --display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --sans: var(--display);
+  --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --gutter: clamp(16px, 4.2vw, 64px);
+  --bar-h: 64px;
+  --lg-blur: 6px; --lg-saturate: 150%;
+  --ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--ink); color: var(--text); font: 400 15px/1.6 var(--sans); letter-spacing: -0.005em; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+button, input, textarea { font: inherit; color: inherit; }
+::selection { background: var(--signal); color: var(--signal-ink); }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 4px; }
+.skip { position: fixed; left: 12px; top: -60px; z-index: 120; background: var(--signal); color: var(--signal-ink); padding: 8px 14px; border-radius: 6px; font-weight: 600; text-decoration: none; }
+.skip:focus { top: 12px; }
+
+/* World layers: canvas, then a side-aware scrim so copy never needs a panel */
+#world { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; display: block; }
+.scrim { position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(90deg, rgba(4,6,13,.86) 0%, rgba(4,6,13,.6) 32%, transparent 58%), linear-gradient(0deg, rgba(4,6,13,.55), transparent 28%); transition: background .6s; }
+body[data-side="right"] .scrim { background: linear-gradient(270deg, rgba(4,6,13,.86) 0%, rgba(4,6,13,.6) 32%, transparent 58%), linear-gradient(0deg, rgba(4,6,13,.55), transparent 28%); }
+
+/* Top bar */
+.bar { position: fixed; inset: 0 0 auto; z-index: 40; height: var(--bar-h); display: flex; align-items: center; gap: 34px; padding: 0 var(--gutter);
+  background: linear-gradient(180deg, rgba(4,6,13,.72), rgba(4,6,13,.35)); backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); border-bottom: 1px solid rgba(214,226,245,.08); }
+.brand { display: inline-flex; align-items: center; gap: 10px; font: 400 13px/1 var(--display); letter-spacing: .04em; text-decoration: none; color: inherit; }
+.brand svg { color: var(--signal); }
+.bar-nav { display: flex; gap: 28px; margin-right: auto; }
+.bar-nav a { color: var(--text-2); text-decoration: none; font: 400 10px/1 var(--display); letter-spacing: .22em; text-transform: uppercase; transition: color .2s; }
+.bar-nav a:hover { color: var(--text); }
+.status { margin: 0; display: inline-flex; align-items: center; gap: 8px; font: 500 11px/1 var(--mono); letter-spacing: .06em; color: var(--muted); }
+.status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.status[data-state="up"] .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(143,214,166,.15); }
+
+/* Chapter rail: dashes that open into labels on hover or when current */
+.rail { position: fixed; z-index: 15; right: var(--gutter); top: 50%; transform: translateY(-50%); transition: opacity .4s; }
+body.in-workbench .rail { opacity: 0; pointer-events: none; }
+.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rail button { display: flex; align-items: center; justify-content: flex-end; gap: 12px; width: 100%; min-height: 32px; padding: 0; background: none; border: 0; cursor: pointer; color: var(--muted); font: 400 9.5px/1 var(--display); letter-spacing: .24em; text-transform: uppercase; }
+.rail button span { opacity: 0; transform: translateX(6px); transition: opacity .25s, transform .25s var(--ease); }
+.rail button::after { content: ""; width: 18px; height: 1px; background: currentColor; transition: width .3s var(--ease); }
+.rail:hover button span, .rail button:focus-visible span, .rail button[aria-current="step"] span { opacity: 1; transform: none; }
+.rail button[aria-current="step"] { color: var(--signal); }
+.rail button[aria-current="step"]::after { width: 34px; }
+
+/* Story chapters: plain text over the scene, no boxes */
+main { position: relative; z-index: 5; }
+.chapter { position: relative; min-height: 140vh; display: flex; align-items: center; padding: var(--bar-h) var(--gutter) 0; }
+.chapter--right { justify-content: flex-end; }
+.chapter--right .copy { margin-right: clamp(0px, 7vw, 120px); }
+.copy { position: relative; z-index: 2; max-width: 30rem; }
+h1, h2 { font-family: var(--display); font-weight: 600; letter-spacing: -.03em; line-height: 1.02; margin: 0 0 26px; text-wrap: balance; filter: drop-shadow(0 2px 18px rgba(4,6,13,.7)); }
+/* drop-shadow, not text-shadow: the word-reveal masks (overflow: hidden) clip text-shadow into dark boxes over bright scenes */
+h1 { font-size: clamp(40px, 5.8vw, 92px); }
+h2 { font-size: clamp(30px, 3.6vw, 54px); }
+h1 em, h2 em { font-style: normal; color: var(--signal); }
+.copy p { color: var(--text-2); font-size: 16px; line-height: 1.65; margin: 0 0 18px; }
+.copy .lede { font-size: clamp(16px, 1.25vw, 18px); color: var(--text); opacity: .86; }
+.copy p, .copy dd, .copy dt, .copy .step { text-shadow: 0 1px 2px rgba(4,6,13,.85), 0 0 18px rgba(4,6,13,.75); }
+.step { display: flex; align-items: center; gap: 12px; font: 500 11px/1.4 var(--mono) !important; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2) !important; margin-bottom: 22px !important; }
+.step .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 10px var(--signal); }
+.source { font-size: 12.5px !important; color: var(--muted) !important; }
+
+/* Spec list: label left in small caps, value right in mono */
+.spec { margin: 28px 0 18px; padding: 0; border-top: 1px solid var(--line-2); }
+.spec div { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.spec dt { color: var(--text-2); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+.spec dd { margin: 0; font: 600 13.5px/1.3 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.spec dd small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 3px; }
+.spec--readings dd { color: var(--signal); }
+
+/* Reveal: heading words rise, then the rest fades up in order */
+.copy .w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: .1em; margin-bottom: -.1em; }
+.copy .w > span { display: inline-block; transform: translateY(110%); transition: transform 1s var(--ease); transition-delay: calc(var(--i) * 72ms + 120ms); }
+.chapter.is-active .copy .w > span { transform: none; }
+.copy > :not(h1):not(h2) { transition: opacity .9s var(--ease), transform .9s var(--ease); }
+.chapter:not(.is-active) .copy > :not(h1):not(h2) { opacity: 0; transform: translateY(14px); }
+.chapter.is-active .copy > p { transition-delay: .4s; }
+.chapter.is-active .copy > .spec { transition-delay: .52s; }
+.chapter.is-active .copy > .actions, .chapter.is-active .copy > .source { transition-delay: .62s; }
+body.reduce-motion .copy .w > span { transform: none; transition: none; }
+body.reduce-motion .chapter .copy > * { opacity: 1 !important; transform: none !important; }
+
+/* Hero */
+.chapter--hero { overflow: clip; min-height: 100vh; min-height: 100svh; align-items: flex-start; flex-direction: column; padding-top: calc(var(--bar-h) + 9vh); }
+.chapter--hero .copy { max-width: 40rem; }
+.hero-foot { position: absolute; left: var(--gutter); right: var(--gutter); bottom: 34px; z-index: 3; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; transition: opacity .9s var(--ease) .8s; }
+.chapter--hero:not(.is-active) .hero-foot { opacity: 0; transition-delay: 0s; }
+.hero-cue { margin: 0; display: flex; align-items: center; gap: 14px; font-size: 10.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--text-2); }
+.hero-cue .track { position: relative; width: 56px; height: 1px; background: var(--line-2); overflow: hidden; }
+.hero-cue .track i { position: absolute; inset: 0; width: 40%; background: var(--signal); animation: cue 2.4s var(--ease) infinite; }
+@keyframes cue { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.chips { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 200px)); border-top: 1px solid var(--line-2); }
+.chips button { display: flex; gap: 12px; align-items: flex-start; width: 100%; height: 100%; padding: 16px 18px 6px 0; background: none; border: 0; text-align: left; cursor: pointer; color: var(--text-2); transition: color .25s; }
+.chips button:hover { color: var(--text); }
+.chips .num { font: 500 10.5px/1.6 var(--mono); color: var(--signal); }
+.chips .tx { display: grid; gap: 4px; font-size: 12.5px; line-height: 1.45; }
+.chips b { font: 400 10px/1.4 var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--text); }
+.wordmark { position: absolute; left: 50%; bottom: 96px; z-index: 1; margin: 0; pointer-events: none; user-select: none; transform: translateX(-50%);
+  font: 300 clamp(36px, 13.5vw, 250px)/.8 var(--display); letter-spacing: .02em; white-space: nowrap; color: transparent; -webkit-text-stroke: 1px rgba(220,232,250,.12);
+  background: linear-gradient(180deg, rgba(220,232,250,.07), transparent 85%); -webkit-background-clip: text; background-clip: text; }
+
+/* Buttons: solid signal pill in the story */
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 20px; border: 1px solid var(--line-2); border-radius: 999px; background: rgba(4,6,13,.4); font-weight: 500; font-size: 13px; letter-spacing: .04em; text-decoration: none; cursor: pointer; color: var(--text); transition: border-color .2s, background .2s, transform .2s var(--ease); }
+.btn:hover { border-color: var(--text-2); }
+.btn:active { transform: translateY(1px); }
+.btn--primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+.btn--primary:hover { background: #b6defe; border-color: #b6defe; }
+
+/* Workbench: clear liquid glass, used only here, never nested */
+.workbench { position: relative; padding: calc(var(--bar-h) + 72px) var(--gutter) 120px; min-height: 100vh; scroll-margin-top: var(--bar-h); }
+.wb-head { max-width: 1200px; margin: 0 auto 40px; }
+.wb-head h2 { margin-bottom: 10px; }
+.wb-head p { color: var(--text-2); margin: 0; }
+.console { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 28px; align-items: start; }
+.glass { position: relative; isolation: isolate; border-radius: 26px;
+  background: linear-gradient(135deg, rgba(255,255,255,.085) 0%, rgba(255,255,255,.018) 38%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.07) 100%);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(1.04); -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(1.04);
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 1px 0 0 rgba(255,255,255,.16), inset -1px 0 0 rgba(255,255,255,.10), inset 0 -1px 0 rgba(255,255,255,.10), inset 0 0 38px rgba(255,255,255,.025), 0 30px 70px -36px rgba(0,0,0,.55); }
+.glass::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(70% 38% at 18% -6%, rgba(255,255,255,.16), transparent 70%), radial-gradient(60% 30% at 92% 108%, rgba(142,203,255,.10), transparent 70%); }
+.glass * { text-shadow: 0 1px 10px rgba(2,4,10,.6); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: rgba(14,20,32,.9); } }
+@media (prefers-reduced-transparency: reduce) { .glass { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--ink-3); } .glass::before { display: none; } }
+
+.console-nav { position: sticky; top: calc(var(--bar-h) + 20px); padding: 14px 12px; }
+.console-nav input { width: 100%; min-height: 40px; padding: 9px 14px; border-radius: 999px; background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.12); box-shadow: inset 0 1px 3px rgba(0,0,0,.3); }
+.nav-head { margin: 16px 0 4px; padding: 0 10px; font: 500 10.5px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted-glass); }
+.nav-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav-list li[hidden] { display: none; }
+.nav-item { position: relative; display: grid; gap: 2px; width: 100%; text-align: left; padding: 9px 10px 9px 14px; border: 0; border-radius: 16px; background: none; cursor: pointer; color: var(--text-2); transition: background .2s; }
+.nav-item b { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.nav-item span { font-size: 12px; line-height: 1.4; color: var(--muted-glass); }
+.nav-item:hover { background: rgba(142,203,255,.06); }
+.nav-item[aria-current] { background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.3); }
+.nav-item[aria-current]::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: var(--signal); box-shadow: 0 0 10px var(--signal); }
+
+.tool { padding: clamp(24px, 2.6vw, 36px); animation: toolIn .45s var(--ease); }
+.tool[hidden] { display: none; }
+@keyframes toolIn { from { opacity: 0; transform: translateY(8px); } }
+.tool > header { display: grid; gap: 8px; margin-bottom: 24px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.tool h3 { font: 600 clamp(22px, 2.2vw, 30px)/1.15 var(--display); letter-spacing: -.015em; margin: 0; }
+.tool header p { font-size: 15px; max-width: 60ch; margin: 0; color: var(--text-2); }
+.tool header code { justify-self: start; padding: 5px 9px; border-radius: 6px; background: rgba(142,203,255,.08); color: var(--signal); font: 400 11px/1 var(--mono); }
+.tool-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 30px; align-items: start; }
+.inputs { display: grid; gap: 14px; align-content: start; }
+.inputs::before, .result::before { display: block; margin-bottom: 4px; font: 400 9.5px/1 var(--display); letter-spacing: .24em; text-transform: uppercase; color: var(--muted); }
+.inputs::before { content: "01 · Input"; }
+.result::before { content: "02 · Output"; margin-bottom: 14px; }
+.field { display: grid; gap: 6px; }
+.field > span { font-size: 13px; color: var(--text-2); }
+textarea { width: 100%; min-height: 96px; padding: 10px 12px; resize: vertical; line-height: 1.5; background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; box-shadow: inset 0 1px 3px rgba(0,0,0,.3); }
+textarea:focus-visible, .console-nav input:focus-visible { outline: none; border-color: var(--signal); box-shadow: inset 0 1px 3px rgba(0,0,0,.3), 0 0 0 3px var(--signal-soft); }
+.tool .btn { background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03)); border: 1px solid rgba(255,255,255,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 8px 22px -12px rgba(0,0,0,.6); }
+.tool .btn--primary { min-height: 46px; font-size: 14px; color: #f2f9ff; background: linear-gradient(180deg, rgba(142,203,255,.42), rgba(142,203,255,.18)); border-color: rgba(190,228,255,.6); box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 12px 30px -12px rgba(142,203,255,.65); }
+.tool .btn--primary:hover { background: linear-gradient(180deg, rgba(142,203,255,.55), rgba(142,203,255,.26)); }
+.result { display: block; position: sticky; top: calc(var(--bar-h) + 24px); min-height: 220px; padding: 18px; border-radius: 20px; background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+.result > * + * { margin-top: 14px; }
+.placeholder { margin: 0; display: grid; place-items: center; text-align: center; min-height: 150px; padding: 12px; color: var(--muted-glass); background: rgba(255,255,255,.03); border: 1px dashed rgba(255,255,255,.18); border-radius: 16px; }
+.out { margin: 0; padding: 12px 14px; background: rgba(0,0,0,.24); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; font: 400 12.5px/1.55 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 0; }
+.readings div { background: rgba(6,9,18,.5); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px 12px; }
+.readings dt { font-size: 12px; color: var(--muted-glass); }
+.readings dd { margin: 2px 0 0; font: 500 16px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
+.verdict { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin: 0; }
+.verdict::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); }
+.verdict[data-good="true"]::before { background: var(--ok); }
+.verdict[data-good="false"]::before { background: var(--bad); }
+
+.foot { position: relative; z-index: 5; background: var(--ink); border-top: 1px solid var(--line); padding: 28px var(--gutter); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+.foot p { margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 960px) {
+  .rail { display: none; }
+  .console { grid-template-columns: minmax(0, 1fr); }
+  .console-nav { position: static; }
+  .tool-body { grid-template-columns: minmax(0, 1fr); }
+  .result { position: static; }
+}
+@media (max-width: 720px) {
+  .bar { gap: 14px; padding-inline: 14px; }
+  .bar-nav { display: none; }
+  .brand { margin-right: auto; }
+  .status .label { display: none; }
+  .chapter { min-height: 125vh; align-items: flex-end; padding-bottom: 12vh; }
+  .chapter--right { justify-content: flex-start; }
+  .chapter--right .copy { margin-right: 0; }
+  .chapter--hero { padding-top: calc(var(--bar-h) + 4vh); min-height: 100vh; min-height: 100svh; }
+  .hero-foot { flex-direction: column; align-items: stretch; gap: 18px; bottom: 22px; }
+  .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wordmark { bottom: 40%; font-size: 13vw; }
+  .scrim, body[data-side="right"] .scrim { background: linear-gradient(0deg, rgba(4,6,13,.92) 0%, rgba(4,6,13,.5) 45%, rgba(4,6,13,.1) 75%); }
+  .tool { padding: 18px 16px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .hero-cue .track i, .tool { animation: none; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#workbench">Skip to the workbench</a>
+<canvas id="world" aria-hidden="true"></canvas>
+<div class="scrim" aria-hidden="true"></div>
+
+<header class="bar">
+  <a class="brand" href="#top" aria-label="Signal, back to top">
+    <svg viewBox="0 0 28 12" width="28" height="12" aria-hidden="true"><path d="M1 6h4l2-4 3 8 3-8 3 8 3-8 2 4h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    Signal
+  </a>
+  <nav class="bar-nav" aria-label="Primary"><a href="#top">Mission</a><a href="#workbench">Workbench</a></nav>
+  <p class="status" data-state="up" role="status"><span class="dot" aria-hidden="true"></span><span class="label">Local tools ready</span></p>
+</header>
+
+<nav class="rail" aria-label="Chapters">
+  <ol>
+    <li><button type="button" data-goto="0"><span>Approach</span></button></li>
+    <li><button type="button" data-goto="1"><span>Seal</span></button></li>
+    <li><button type="button" data-goto="2"><span>Measure</span></button></li>
+    <li><button type="button" data-goto="3"><span>Workbench</span></button></li>
+  </ol>
+</nav>
+
+<main>
+  <section class="chapter chapter--hero" id="top" data-chapter="0" data-side="left" aria-labelledby="h-hero">
+    <div class="copy">
+      <p class="step"><span class="dot"></span>Chapter 00 — Deep space relay</p>
+      <h1 id="h-hero">Quiet by <em>design.</em></h1>
+      <p class="lede">A mission-page pattern: a live scene behind plain editorial copy, chapters that fly the camera as you scroll, and a glass workbench where the real tools live.</p>
+    </div>
+    <div class="hero-foot">
+      <p class="hero-cue"><span>Scroll to fly</span><span class="track"><i></i></span></p>
+      <ol class="chips">
+        <li><button type="button" data-goto="1"><span class="num">01</span><span class="tx"><b>Seal</b>Copy over the scene, no panels.</span></button></li>
+        <li><button type="button" data-goto="2"><span class="num">02</span><span class="tx"><b>Measure</b>Numbers in mono, labels in caps.</span></button></li>
+        <li><button type="button" data-goto="3"><span class="num">03</span><span class="tx"><b>Workbench</b>One tool on stage at a time.</span></button></li>
+      </ol>
+    </div>
+    <p class="wordmark" aria-hidden="true">SIGNAL</p>
+  </section>
+
+  <section class="chapter" data-chapter="1" data-side="left" aria-labelledby="h-seal">
+    <div class="copy">
+      <p class="step"><span class="dot"></span>Chapter 01 — Command module</p>
+      <h2 id="h-seal">Sealed <em>at the source.</em></h2>
+      <p>Story chapters are text straight on the scene. A directional scrim and a soft text shadow keep it readable, so nothing boxes the copy in and the world stays visible.</p>
+      <dl class="spec">
+        <div><dt>Display</dt><dd>Geist 600, −0.03em</dd></div>
+        <div><dt>Data</dt><dd>Geist Mono, tabular</dd></div>
+        <div><dt>Accent</dt><dd>#8ECBFF only</dd></div>
+      </dl>
+      <div class="actions"><a class="btn btn--primary" href="#workbench">Open the workbench</a><a class="btn" href="#top">Back to top</a></div>
+    </div>
+  </section>
+
+  <section class="chapter chapter--right" data-chapter="2" data-side="right" aria-labelledby="h-measure">
+    <div class="copy">
+      <p class="step"><span class="dot"></span>Chapter 02 — High-gain antenna</p>
+      <h2 id="h-measure">Every claim <em>has a reading.</em></h2>
+      <p>Measured values sit in a spec list tinted in the accent, with the set-point underneath and a source line that says where the number came from.</p>
+      <dl class="spec spec--readings">
+        <div><dt>Spreading</dt><dd>SF 16 · BPSK · RRC α 0.35</dd></div>
+        <div><dt>Channel noise σ</dt><dd>0.0200 <small>set 0.02</small></dd></div>
+        <div><dt>Bit errors after despread</dt><dd>0</dd></div>
+      </dl>
+      <p class="source">Example values from the SentinelSpread Stage 4 verification run.</p>
+    </div>
+  </section>
+
+  <section class="workbench" id="workbench" data-chapter="3" data-side="left" aria-labelledby="h-workbench">
+    <div class="wb-head">
+      <h2 id="h-workbench">Workbench</h2>
+      <p>Working tools, one at a time, each with the readings behind its result. These two run in your browser.</p>
+    </div>
+    <div class="console">
+      <aside class="console-nav glass" aria-label="Workbench tools">
+        <label><span class="sr-only">Find a tool</span><input type="search" id="tool-search" placeholder="Find a tool" autocomplete="off"></label>
+        <p class="nav-head">Encrypt</p>
+        <ul class="nav-list">
+          <li><button type="button" class="nav-item" data-tool="hash" aria-current="true"><b>SHA-256</b><span>Hash any text with Web Crypto.</span></button></li>
+        </ul>
+        <p class="nav-head">Measure</p>
+        <ul class="nav-list">
+          <li><button type="button" class="nav-item" data-tool="stats"><b>Text readings</b><span>Bytes, entropy, unique symbols.</span></button></li>
+        </ul>
+      </aside>
+      <div>
+        <article class="tool glass" id="tool-hash">
+          <header><h3>SHA-256</h3><p>Hashes the text locally. Flip one character and the digest changes completely.</p><code>crypto.subtle.digest</code></header>
+          <form class="tool-body" data-run="hash">
+            <div class="inputs">
+              <label class="field"><span>Text</span><textarea name="text">Meet at the north gate, 21:40.</textarea></label>
+              <button class="btn btn--primary" type="submit">Hash</button>
+            </div>
+            <output class="result" aria-live="polite"><p class="placeholder">The digest appears here.</p></output>
+          </form>
+        </article>
+        <article class="tool glass" id="tool-stats" hidden>
+          <header><h3>Text readings</h3><p>Size and Shannon entropy of a message, the numbers a detector would look at first.</p><code>local</code></header>
+          <form class="tool-body" data-run="stats">
+            <div class="inputs">
+              <label class="field"><span>Text</span><textarea name="text">Hidden in the noise.</textarea></label>
+              <button class="btn btn--primary" type="submit">Measure</button>
+            </div>
+            <output class="result" aria-live="polite"><p class="placeholder">Readings appear here.</p></output>
+          </form>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="foot"><p>Signal · a mission-page pattern from SentinelSpread</p><p>Demo for the sentinel-design-system skill</p></footer>
+
+<script>
+"use strict";
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+document.body.classList.toggle("reduce-motion", reduce);
+
+/* Split headings into words for the rise reveal; the heading keeps an accessible label. */
+for (const h of document.querySelectorAll(".copy h1, .copy h2")) {
+  h.setAttribute("aria-label", h.textContent.replace(/\s+/g, " ").trim());
+  let i = 0;
+  (function wrap(node) {
+    for (const child of [...node.childNodes]) {
+      if (child.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        child.textContent.split(/(\s+)/).forEach(part => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) { frag.append(" "); return; }
+          const w = document.createElement("span"); w.className = "w"; w.setAttribute("aria-hidden", "true");
+          const inner = document.createElement("span"); inner.textContent = part; inner.style.setProperty("--i", i++);
+          w.append(inner); frag.append(w);
+        });
+        child.replaceWith(frag);
+      } else if (child.nodeType === 1) wrap(child);
+    }
+  })(h);
+}
+
+/* Scroll conductor: native scroll -> fractional chapter. `exact` drives DOM, `smooth` drives the scene. */
+const sections = [...document.querySelectorAll("[data-chapter]")];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+let anchors = [], exact = 0, smooth = 0, active = -1;
+function measure() {
+  const max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+  anchors = sections.map((el, i) => i === 0 ? 0 : i === sections.length - 1 ? clamp(el.offsetTop - innerHeight * .15, 0, max) : clamp(el.offsetTop + el.offsetHeight / 2 - innerHeight / 2, 0, max));
+  for (let i = 1; i < anchors.length; i++) anchors[i] = Math.max(anchors[i], anchors[i - 1] + 1);
+}
+function progressAt(y) {
+  if (y <= anchors[0]) return 0;
+  for (let i = 0; i < anchors.length - 1; i++) if (y <= anchors[i + 1]) return i + clamp((y - anchors[i]) / (anchors[i + 1] - anchors[i]), 0, 1);
+  return anchors.length - 1;
+}
+const read = () => { exact = progressAt(scrollY); };
+measure(); read(); smooth = exact;
+addEventListener("scroll", read, { passive: true });
+addEventListener("resize", () => { measure(); read(); resize(); });
+document.fonts?.ready.then(() => { measure(); read(); });
+const rail = document.querySelectorAll(".rail [data-goto]");
+document.querySelectorAll("[data-goto]").forEach(b => b.addEventListener("click", () => scrollTo({ top: anchors[+b.dataset.goto], behavior: reduce ? "auto" : "smooth" })));
+function onChapter(i) {
+  sections.forEach((s, k) => s.classList.toggle("is-active", k === i));
+  rail.forEach(b => +b.dataset.goto === i ? b.setAttribute("aria-current", "step") : b.removeAttribute("aria-current"));
+  document.body.dataset.side = sections[i].dataset.side || "left";
+  document.body.classList.toggle("in-workbench", i === sections.length - 1);
+}
+
+/* Scene stand-in: a 2D starfield and a planet limb that respond to the smoothed chapter value. */
+const cv = document.getElementById("world"), ctx = cv.getContext("2d");
+let W = 0, H = 0, dpr = 1;
+const stars = Array.from({ length: 420 }, () => ({ x: Math.random(), y: Math.random(), z: Math.random() ** 2, t: Math.random() * 6.28 }));
+function resize() { dpr = Math.min(devicePixelRatio || 1, 2); W = cv.width = innerWidth * dpr; H = cv.height = innerHeight * dpr; }
+resize();
+function draw(p, time) {
+  const g = ctx.createRadialGradient(W * (.72 - p * .08), H * .35, 0, W * .7, H * .4, Math.max(W, H) * .8);
+  g.addColorStop(0, "#1a1f45"); g.addColorStop(.45, "#0a0d1f"); g.addColorStop(1, "#04060d");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    const x = ((s.x - p * .06 * (s.z + .2)) % 1 + 1) % 1 * W, y = ((s.y + p * .03 * s.z) % 1) * H;
+    const a = .25 + .6 * s.z * (.75 + .25 * Math.sin(time * 1.3 + s.t));
+    ctx.fillStyle = `rgba(214,230,255,${a})`; ctx.fillRect(x, y, (0.6 + s.z * 1.4) * dpr, (0.6 + s.z * 1.4) * dpr);
+  }
+  // planet limb with an atmosphere rim in the accent colour
+  const r = Math.max(W, H) * (.55 + p * .05), cx = W * (1.12 - p * .1), cy = H * (.55 + p * .05);
+  const pg = ctx.createRadialGradient(cx - r * .3, cy - r * .3, r * .2, cx, cy, r);
+  pg.addColorStop(0, "#2b5f88"); pg.addColorStop(.8, "#12233d"); pg.addColorStop(1, "#071020");
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.2832); ctx.fillStyle = pg; ctx.fill();
+  ctx.lineWidth = 2 * dpr; ctx.strokeStyle = "rgba(142,203,255,.55)"; ctx.shadowColor = "#8ecbff"; ctx.shadowBlur = 30 * dpr; ctx.stroke(); ctx.shadowBlur = 0;
+}
+
+let last = 0, t = 0;
+function tick(now) {
+  const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60; last = now;
+  if (!reduce) t += dt;
+  smooth = reduce ? exact : smooth + (exact - smooth) * (1 - Math.exp(-5.2 * dt));
+  const i = Math.round(exact);
+  if (i !== active) { active = i; onChapter(i); }
+  draw(smooth, t);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* Workbench: searchable nav, one tool on stage, results as readings + verdict. */
+const items = [...document.querySelectorAll(".nav-item")];
+items.forEach(b => b.addEventListener("click", () => {
+  items.forEach(x => x.toggleAttribute("aria-current", x === b));
+  document.querySelectorAll(".tool").forEach(a => a.hidden = a.id !== "tool-" + b.dataset.tool);
+}));
+document.getElementById("tool-search").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  items.forEach(b => b.parentElement.hidden = q && !b.textContent.toLowerCase().includes(q));
+});
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+function readings(pairs) { const dl = el("dl", "readings"); for (const [k, v] of pairs) { const d = el("div"); d.append(el("dt", null, k), el("dd", null, v)); dl.append(d); } return dl; }
+function verdict(text, good) { const p = el("p", "verdict", text); p.dataset.good = String(good); return p; }
+const runners = {
+  async hash(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+    return [el("pre", "out", hex), readings([["Input", `${new TextEncoder().encode(text).length} bytes`], ["Digest", "256 bits"]])];
+  },
+  async stats(text) {
+    const bytes = new TextEncoder().encode(text), counts = new Map();
+    for (const b of bytes) counts.set(b, (counts.get(b) || 0) + 1);
+    let H = 0; for (const c of counts.values()) { const q = c / bytes.length; H -= q * Math.log2(q); }
+    return [readings([["Bytes", String(bytes.length)], ["Unique", String(counts.size)], ["Entropy", `${H.toFixed(2)} bits/byte`]]),
+      verdict(H > 7.5 ? "Looks like ciphertext or noise" : "Looks like ordinary text", H <= 7.5)];
+  },
+};
+document.querySelectorAll("form[data-run]").forEach(f => f.addEventListener("submit", async e => {
+  e.preventDefault();
+  const out = f.querySelector(".result");
+  try { out.replaceChildren(...await runners[f.dataset.run](f.text.value)); }
+  catch (err) { out.replaceChildren(verdict(err.message, false)); }
+}));
+document.querySelectorAll("form[data-run]").forEach(f => f.requestSubmit());
+</script>
+</body>
+</html>

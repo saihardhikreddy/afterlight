@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page Name</title>
+<style>
+  :root {
+    --bg: #0e0b14;
+    --surface: #1a1524;
+    --ink: #f3eef7;
+    --muted: #a99db6;
+    --accent: #ff6fb5;
+    --space: 8px;
+    --radius: 12px;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  main { position: relative; padding: calc(var(--space) * 4); }
+  button {
+    padding: 8px 14px; border: 1px solid #ffffff33; border-radius: 999px;
+    background: #ffffff10; color: var(--ink); font: inherit; cursor: pointer;
+    transition: background .2s var(--ease);
+  }
+  button:hover { background: #ffffff1f; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<canvas id="c" role="img" aria-label="Describe what the canvas shows"></canvas>
+<main>
+  <h1>Page Name</h1>
+</main>
+<script>
+"use strict";
+const canvas = document.getElementById("c");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let dpr = 1;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+}
+addEventListener("resize", resize);
+resize();
+
+// Start animation clocks on the first frame, not at script time.
+let start = null;
+function frame(now) {
+  if (start === null) start = now;
+  const t = reduceMotion ? 0 : (now - start) / 1000;
+  // draw(t)
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

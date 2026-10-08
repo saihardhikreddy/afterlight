@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SENTINEL Ring Station</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root {
+    --ink: #04060d; --text: #e9eef6; --text-2: #aab4c4; --muted: #7a8598;
+    --signal: #8ecbff; --signal-ink: #061222; --line-2: rgba(214, 226, 245, 0.17);
+    --display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
+    --ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--ink); color: var(--text); font: 400 15px/1.6 var(--display); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; cursor: grab; }
+  body.is-dragging canvas { cursor: grabbing; }
+  .scrim { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(4,6,13,.82) 0%, rgba(4,6,13,.45) 30%, transparent 52%), linear-gradient(0deg, rgba(4,6,13,.6), transparent 30%); }
+  .copy { position: fixed; left: clamp(16px, 4.2vw, 64px); top: clamp(24px, 9vh, 96px); max-width: 26rem; pointer-events: none; }
+  .step { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; font: 500 11px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); }
+  .step::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 10px var(--signal); }
+  h1 { margin: 0 0 16px; font: 600 clamp(34px, 4.6vw, 68px)/1.02 var(--display); letter-spacing: -.03em; filter: drop-shadow(0 2px 18px rgba(4,6,13,.7)); }
+  h1 em { font-style: normal; color: var(--signal); }
+  .copy p { margin: 0; color: var(--text-2); text-shadow: 0 1px 2px rgba(4,6,13,.85), 0 0 18px rgba(4,6,13,.75); }
+  .modes { position: fixed; left: clamp(16px, 4.2vw, 64px); bottom: 28px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .modes button { min-height: 40px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(4,6,13,.45); color: var(--text); font: 500 13px var(--display); letter-spacing: .04em; cursor: pointer; transition: border-color .2s, background .2s; }
+  .modes button:hover { border-color: var(--text-2); }
+  .modes button[aria-pressed="true"] { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+  .modes button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+  .hint { position: fixed; right: clamp(16px, 4.2vw, 64px); bottom: 36px; margin: 0; font: 400 10.5px/1 var(--display); letter-spacing: .24em; text-transform: uppercase; color: var(--text-2); }
+  .boot { position: fixed; inset: 0; display: grid; place-items: center; background: var(--ink); transition: opacity 1s var(--ease), visibility 1s; }
+  .boot.is-done { opacity: 0; visibility: hidden; }
+  .boot p { margin: 0; font: 300 26px/1 var(--display); letter-spacing: .38em; padding-left: .38em; }
+  .boot small { display: block; margin-top: 14px; font: 500 10.5px var(--mono); letter-spacing: .3em; color: var(--muted); text-align: center; }
+  .notice { position: fixed; left: 16px; right: 16px; bottom: 90px; margin: 0; padding: 10px 14px; border-radius: 12px; background: rgba(8,12,22,.85); border: 1px solid rgba(255,122,102,.45); font-size: 13px; }
+  @media (max-width: 720px) {
+    .scrim { background: linear-gradient(180deg, rgba(4,6,13,.85) 0%, rgba(4,6,13,.3) 38%, transparent 55%), linear-gradient(0deg, rgba(4,6,13,.75), transparent 35%); }
+    .hint { display: none; }
+    .modes { left: 16px; right: 16px; bottom: 18px; }
+    .modes button { flex: 1 1 40%; }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="world" role="img" aria-label="The SENTINEL ring station: twelve white modules on a ring around a central hub with a dish antenna, solar wings and a blue downlink beam, in deep space beside a ringed ice giant"></canvas>
+<div class="scrim" aria-hidden="true"></div>
+<div class="copy">
+  <p class="step">SENTINEL-1 · Ring station</p>
+  <h1>Hidden in <em>the noise.</em></h1>
+  <p>Twelve modules on a nine-metre ring, built by a Blender script, lit and animated live in three.js. Each mode below wakes one part of the station.</p>
+</div>
+<div class="modes" role="group" aria-label="Station mode">
+  <button type="button" data-mode="beam" aria-pressed="true">Transmit</button>
+  <button type="button" data-mode="open" aria-pressed="false">Open bay</button>
+  <button type="button" data-mode="holo" aria-pressed="false">Hologram</button>
+  <button type="button" data-mode="audio" aria-pressed="false">Waveform</button>
+</div>
+<p class="hint">Drag to rotate</p>
+<div class="boot" id="boot" aria-hidden="true"><div><p>SENTINEL</p><small>ACQUIRING SIGNAL</small></div></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

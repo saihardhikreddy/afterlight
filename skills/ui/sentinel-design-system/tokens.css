@@ -1,0 +1,31 @@
+/* Sentinel tokens: one cold accent on deep navy space.
+   Geist for display and text, Geist Mono for data and labels. */
+:root {
+  --ink: #04060d;        /* page */
+  --ink-2: #0a0e18;      /* raised */
+  --ink-3: #121826;      /* solid fallback for glass */
+  --line: rgba(214, 226, 245, 0.09);
+  --line-2: rgba(214, 226, 245, 0.17);
+  --text: #e9eef6;
+  --text-2: #aab4c4;
+  --muted: #7a8598;
+  --text-glass: #d3dbe8;  /* body text inside glass */
+  --muted-glass: #b4bfce; /* captions inside glass, keeps AA */
+  --signal: #8ecbff;      /* the only accent */
+  --signal-ink: #061222;  /* text on a signal fill */
+  --signal-soft: rgba(142, 203, 255, 0.15);
+  --ok: #8fd6a6;
+  --bad: #ff7a66;
+
+  --display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --sans: var(--display);
+  --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  --gutter: clamp(16px, 4.2vw, 64px);
+  --bar-h: 64px;
+  --radius: 10px;
+  --lg-blur: 6px;          /* clear liquid glass: light blur, bright rim */
+  --lg-saturate: 150%;
+  --ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+  color-scheme: dark;
+}

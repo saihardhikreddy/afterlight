@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contour Band Sphere</title>
+<style>
+  :root {
+    --bg-inner: #4a1a6b;
+    --bg-outer: #0d0418;
+    --ink: #f6e9f7;
+    --muted: #b79cc4;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(120% 90% at 50% 45%, var(--bg-inner) 0%, #24093a 45%, var(--bg-outer) 100%);
+    color: var(--ink);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .label {
+    position: fixed; left: 24px; bottom: 24px; max-width: 32ch;
+    letter-spacing: .02em; color: var(--muted); pointer-events: none;
+  }
+  .label b { display: block; color: var(--ink); font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  button {
+    position: fixed; right: 24px; bottom: 24px; padding: 8px 14px;
+    border: 1px solid #ffffff33; border-radius: 999px; background: #ffffff10;
+    color: var(--ink); font: inherit; cursor: pointer;
+  }
+  button:hover { background: #ffffff1f; }
+  button:focus-visible { outline: 2px solid #ff8cc8; outline-offset: 2px; }
+  @media (max-width: 560px) { button { top: 16px; bottom: auto; right: 16px; } .label { left: 16px; bottom: 16px; } }
+  .fallback { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A glossy magenta sphere with fine contour ridges, slowly rotating" role="img"></canvas>
+<p class="label"><b>Contour band sphere</b>Warped noise field, terraced into thin parallel bands, displaced and lit in WebGL2.</p>
+<button id="replay" type="button">Replay intro</button>
+<div class="fallback" id="fallback">WebGL2 is not available in this browser.</div>
+
+<script>
+"use strict";
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: true, premultipliedAlpha: false });
+if (!gl) {
+  document.getElementById("fallback").style.display = "grid";
+  throw new Error("WebGL2 unavailable");
+}
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- tunables ----------
+const P = {
+  subdivisions: 7,      // icosphere level: 7 = ~164k vertices, enough for thin bands
+  bands: 11.0,          // number of contour rings across the field range
+  warp: 1.35,           // domain-warp strength; higher = more swirl
+  ridge: 0.028,         // ridge displacement height
+  swell: 0.08,          // low-frequency body displacement
+  particles: 9000,
+  introMs: 2600,
+};
+
+// ---------- geometry: icosphere ----------
+function icosphere(level) {
+  const t = (1 + Math.sqrt(5)) / 2;
+  let v = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]]
+    .map(p => { const l = Math.hypot(...p); return p.map(c => c / l); });
+  let f = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+           [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  for (let i = 0; i < level; i++) {
+    const cache = new Map(), nf = [];
+    const mid = (a, b) => {
+      const k = a < b ? a + "_" + b : b + "_" + a;
+      if (cache.has(k)) return cache.get(k);
+      const p = [0,1,2].map(j => (v[a][j] + v[b][j]) / 2), l = Math.hypot(...p);
+      v.push(p.map(c => c / l)); cache.set(k, v.length - 1); return v.length - 1;
+    };
+    for (const [a,b,c] of f) { const ab = mid(a,b), bc = mid(b,c), ca = mid(c,a); nf.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca]); }
+    f = nf;
+  }
+  return { pos: new Float32Array(v.flat()), idx: new Uint32Array(f.flat()) };
+}
+const sphere = icosphere(P.subdivisions);
+
+// ---------- shaders ----------
+const NOISE = `
+vec4 permute(vec4 x){ return mod(((x*34.0)+1.0)*x, 289.0); }
+vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod(i, 289.0);
+  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 1.0/7.0;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x); vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z); vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+float fbm(vec3 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 3; i++){ s += a * snoise(p); p *= 2.02; a *= 0.5; } return s; }
+`;
+
+const VS = `#version 300 es
+precision highp float;
+in vec3 aPos;
+uniform mat4 uProj, uView, uModel;
+uniform float uTime, uBands, uWarp, uRidge, uSwell, uScale;
+out vec3 vWorld; out vec3 vNormal; out float vField; out float vBand;
+${NOISE}
+// Warped scalar field on the unit sphere.
+float field(vec3 p){
+  vec3 q = p * 0.9;
+  vec3 w = vec3(fbm(q + vec3(0.0, 0.0, uTime*0.05)), fbm(q + vec3(5.2, 1.3, 0.0)), fbm(q + vec3(1.7, 9.2, -uTime*0.04)));
+  // Low-frequency base so the bands come from the warp, not from noise detail.
+  return snoise(p * 0.85 + uWarp * w) * 0.5 + snoise(p * 1.7 + w) * 0.12;
+}
+// Terracing: a periodic wave over the field gives many thin parallel ridges.
+// A cosine rather than a triangle wave keeps crests smooth at mesh resolution.
+float ridgeOf(float f){ return 0.5 - 0.5 * cos(6.2831853 * f * uBands); }
+vec3 displace(vec3 n){
+  float f = field(n);
+  float r = ridgeOf(f);
+  return n * (1.0 + uSwell * f + uRidge * r);
+}
+void main(){
+  vec3 n = normalize(aPos);
+  vec3 t1 = normalize(cross(n, abs(n.y) < 0.99 ? vec3(0,1,0) : vec3(1,0,0)));
+  vec3 t2 = cross(n, t1);
+  float e = 0.0035;
+  vec3 p  = displace(n);
+  vec3 pa = displace(normalize(n + t1 * e));
+  vec3 pb = displace(normalize(n + t2 * e));
+  vec3 nrm = normalize(cross(pa - p, pb - p));
+  if (dot(nrm, n) < 0.0) nrm = -nrm;
+  float f = field(n);
+  vField = f; vBand = ridgeOf(f);
+  vec4 world = uModel * vec4(p * uScale, 1.0);
+  vWorld = world.xyz;
+  vNormal = mat3(uModel) * nrm;
+  gl_Position = uProj * uView * world;
+}`;
+
+const FS = `#version 300 es
+precision highp float;
+in vec3 vWorld; in vec3 vNormal; in float vField; in float vBand;
+uniform vec3 uEye;
+out vec4 outColor;
+void main(){
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(uEye - vWorld);
+  vec3 L1 = normalize(vec3(-0.6, 0.8, 0.9));
+  vec3 L2 = normalize(vec3(0.9, -0.3, -0.4));
+  vec3 valley = vec3(0.23, 0.03, 0.20);
+  vec3 body   = vec3(0.72, 0.07, 0.40);
+  vec3 crest  = vec3(1.00, 0.48, 0.74);
+  float r = smoothstep(0.25, 0.95, vBand);
+  vec3 base = mix(valley, body, smoothstep(0.0, 0.45, vBand));
+  base = mix(base, crest, r * r);
+  float d1 = max(dot(N, L1), 0.0), d2 = max(dot(N, L2), 0.0);
+  vec3 H = normalize(L1 + V);
+  float spec = pow(max(dot(N, H), 0.0), 90.0) * 1.1 + pow(max(dot(N, H), 0.0), 18.0) * 0.12;
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  vec3 col = base * (0.12 + 0.9 * d1) + base * vec3(0.5, 0.35, 0.9) * d2 * 0.35;
+  col += vec3(1.0, 0.92, 0.97) * spec;
+  col += vec3(0.75, 0.55, 1.0) * fres * 0.3;
+  col = col / (1.0 + col * 0.35);         // soft tone map
+  col = pow(col, vec3(1.0 / 2.2));
+  outColor = vec4(col, 1.0);
+}`;
+
+const PVS = `#version 300 es
+precision highp float;
+in vec3 aStart; in vec3 aEnd; in float aDelay;
+uniform mat4 uProj, uView, uModel;
+uniform float uProgress, uDpr;
+out float vAlpha;
+void main(){
+  float t = clamp((uProgress - aDelay) / (1.0 - aDelay * 0.6), 0.0, 1.0);
+  float e = 1.0 - pow(1.0 - t, 3.0);           // easeOutCubic
+  vec3 p = mix(aStart, aEnd * 1.02, e);
+  vAlpha = smoothstep(0.0, 0.15, t) * (1.0 - smoothstep(0.82, 1.0, uProgress));
+  vec4 world = uModel * vec4(p, 1.0);
+  gl_Position = uProj * uView * world;
+  gl_PointSize = (1.6 + 2.2 * (1.0 - e)) * uDpr;
+}`;
+const PFS = `#version 300 es
+precision highp float;
+in float vAlpha; out vec4 outColor;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  float a = smoothstep(0.5, 0.0, length(d)) * vAlpha;
+  outColor = vec4(vec3(1.0, 0.62, 0.85) * a, a);   // premultiplied, additive
+}`;
+
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const mesh = program(VS, FS);
+const parts = program(PVS, PFS);
+
+function buffer(prog, name, data, size) {
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog.p, name); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+}
+const meshVao = gl.createVertexArray(); gl.bindVertexArray(meshVao);
+buffer(mesh, "aPos", sphere.pos, 3);
+const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphere.idx, gl.STATIC_DRAW);
+
+// Particles: each starts on a wide shell and lands on a random surface point.
+const N = P.particles, start = new Float32Array(N*3), end = new Float32Array(N*3), delay = new Float32Array(N);
+for (let i = 0; i < N; i++) {
+  const vi = (Math.random() * (sphere.pos.length / 3)) | 0;
+  end.set(sphere.pos.subarray(vi*3, vi*3+3), i*3);
+  const u = Math.random()*2-1, th = Math.random()*Math.PI*2, r = 3 + Math.random()*4, s = Math.sqrt(1-u*u);
+  start.set([r*s*Math.cos(th), r*u, r*s*Math.sin(th)], i*3);
+  delay[i] = Math.random() * 0.35;
+}
+const partVao = gl.createVertexArray(); gl.bindVertexArray(partVao);
+buffer(parts, "aStart", start, 3); buffer(parts, "aEnd", end, 3); buffer(parts, "aDelay", delay, 1);
+gl.bindVertexArray(null);
+
+// ---------- math ----------
+const persp = (fov, a, n, f) => { const t = 1/Math.tan(fov/2); return [t/a,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]; };
+const lookZ = d => [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,-d,1];
+function rotYX(y, x) {
+  const cy = Math.cos(y), sy = Math.sin(y), cx = Math.cos(x), sx = Math.sin(x);
+  return [cy,0,-sy,0, sy*sx,cx,cy*sx,0, sy*cx,-sx,cy*cx,0, 0,0,0,1];
+}
+
+// ---------- loop ----------
+// Start the intro on the first rendered frame, after shader compile, not at script time.
+let introStart = null;
+document.getElementById("replay").addEventListener("click", () => { introStart = performance.now(); });
+let dpr = 1;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  const w = Math.round(innerWidth * dpr), h = Math.round(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, w, h);
+}
+addEventListener("resize", resize); resize();
+let pointer = { x: 0, y: 0 };
+addEventListener("pointermove", e => { pointer.x = e.clientX / innerWidth - 0.5; pointer.y = e.clientY / innerHeight - 0.5; });
+
+const ease = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+function frame(now) {
+  if (introStart === null) introStart = now;
+  const time = reduceMotion ? 0 : now / 1000;
+  const intro = reduceMotion ? 1 : Math.min((now - introStart) / P.introMs, 1);
+  // Scale-based reveal: the mesh grows in under the particles instead of fading in,
+  // so a self-overlapping opaque mesh never needs transparency sorting.
+  const scale = ease(Math.min(Math.max((intro - 0.45) / 0.5, 0), 1));
+  const aspect = canvas.width / canvas.height;
+  const dist = aspect < 0.8 ? 3.6 / Math.max(aspect, 0.45) * 0.75 : 3.6;
+  const proj = persp(0.7, aspect, 0.1, 50), view = lookZ(dist);
+  const model = rotYX(time * 0.12 + pointer.x * 0.5, 0.25 + pointer.y * 0.3);
+
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (scale > 0.001) {
+    gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+    gl.useProgram(mesh.p); gl.bindVertexArray(meshVao);
+    gl.uniformMatrix4fv(mesh.u.uProj, false, proj); gl.uniformMatrix4fv(mesh.u.uView, false, view); gl.uniformMatrix4fv(mesh.u.uModel, false, model);
+    gl.uniform1f(mesh.u.uTime, time); gl.uniform1f(mesh.u.uBands, P.bands); gl.uniform1f(mesh.u.uWarp, P.warp);
+    gl.uniform1f(mesh.u.uRidge, P.ridge); gl.uniform1f(mesh.u.uSwell, P.swell); gl.uniform1f(mesh.u.uScale, scale);
+    gl.uniform3f(mesh.u.uEye, 0, 0, dist);
+    gl.drawElements(gl.TRIANGLES, sphere.idx.length, gl.UNSIGNED_INT, 0);
+  }
+  if (intro < 1) {
+    // Additive blending is order-independent, so particles need no sorting either.
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+    gl.useProgram(parts.p); gl.bindVertexArray(partVao);
+    gl.uniformMatrix4fv(parts.u.uProj, false, proj); gl.uniformMatrix4fv(parts.u.uView, false, view); gl.uniformMatrix4fv(parts.u.uModel, false, model);
+    gl.uniform1f(parts.u.uProgress, intro); gl.uniform1f(parts.u.uDpr, dpr);
+    gl.drawArrays(gl.POINTS, 0, N);
+    gl.depthMask(true);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
