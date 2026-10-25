@@ -17,7 +17,20 @@ for skill in skills:
     if not m:
         problems.append(f"{rel}: missing frontmatter")
         continue
-    meta = dict(line.split(":", 1) for line in m.group(1).splitlines() if ":" in line)
+
+    meta = {}
+    current_key = None
+    for line in m.group(1).splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("  ") or line.startswith("\t"):
+            if current_key:
+                meta[current_key] += " " + line.strip()
+        elif ":" in line:
+            k, v = line.split(":", 1)
+            current_key = k.strip()
+            meta[current_key] = v.strip()
+
     name = meta.get("name", "").strip()
     desc = meta.get("description", "").strip()
     if name != skill.parent.name:
@@ -40,5 +53,10 @@ for md in sorted(ROOT.rglob("*.md")):
 
 for p in problems:
     print(p)
-print(f"{len(skills)} skills checked, {len(problems)} problem(s)")
-sys.exit(1 if problems else 0)
+
+if problems:
+    print(f"[FAIL] {len(skills)} skills checked, {len(problems)} problem(s) found.")
+    sys.exit(1)
+else:
+    print(f"[PASS] {len(skills)} skills checked successfully with 0 problems.")
+    sys.exit(0)
