@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LINK = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
 problems = []
+verbose = "-v" in sys.argv or "--verbose" in sys.argv
 
 skills = sorted((ROOT / "skills").rglob("SKILL.md"))
 for skill in skills:
@@ -42,11 +43,14 @@ for skill in skills:
     if len(desc) > 1024:
         problems.append(f"{rel}: description over 1024 characters")
 
+    if verbose and not problems:
+        print(f"  [OK] verified skill: {skill.parent.name}")
+
 for md in sorted(ROOT.rglob("*.md")):
     if any(part.startswith(".") or part == "node_modules" for part in md.relative_to(ROOT).parts):
         continue
     for target in LINK.findall(md.read_text(encoding="utf-8")):
-        if re.match(r"^[a-z]+:", target):
+        if re.match(r"^[a-zA-Z]+:", target) or target.startswith("//") or target.startswith("mailto:"):
             continue
         if not (md.parent / target).exists():
             problems.append(f"{md.relative_to(ROOT)}: broken link -> {target}")
