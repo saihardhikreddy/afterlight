@@ -13,6 +13,7 @@ verbose = "-v" in sys.argv or "--verbose" in sys.argv
 skills = sorted((ROOT / "skills").rglob("SKILL.md"))
 for skill in skills:
     rel = skill.relative_to(ROOT)
+    before = len(problems)
     text = skill.read_text(encoding="utf-8")
     m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
     if not m:
@@ -43,7 +44,7 @@ for skill in skills:
     if len(desc) > 1024:
         problems.append(f"{rel}: description over 1024 characters")
 
-    if verbose and not problems:
+    if verbose and len(problems) == before:  # this skill added no problems
         print(f"  [OK] verified skill: {skill.parent.name}")
 
 for md in sorted(ROOT.rglob("*.md")):
