@@ -33,8 +33,15 @@ for skill in skills:
             current_key = k.strip()
             meta[current_key] = v.strip()
 
-    name = meta.get("name", "").strip()
-    desc = meta.get("description", "").strip()
+    def unquote(value):
+        """YAML allows name: "x" and description: 'y'; compare the value, not the quotes."""
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        return value
+
+    name = unquote(meta.get("name", ""))
+    desc = unquote(meta.get("description", ""))
     if name != skill.parent.name:
         problems.append(f"{rel}: name '{name}' does not match folder '{skill.parent.name}'")
     if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name or "-"):
