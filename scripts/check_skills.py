@@ -4,9 +4,12 @@ and relative Markdown links resolve. Exits non-zero on any problem."""
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote as url_unquote
 
 ROOT = Path(__file__).resolve().parent.parent
 LINK = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
+# Code is shown, not followed: a link-shaped example inside ``` fences or `inline code` isn't a link.
+CODE = re.compile(r"^(```|~~~).*?^\1[^\n]*$|`[^`\n]+`", re.S | re.M)
 problems = []
 verbose = "-v" in sys.argv or "--verbose" in sys.argv
 
@@ -57,7 +60,8 @@ for skill in skills:
 for md in sorted(ROOT.rglob("*.md")):
     if any(part.startswith(".") or part == "node_modules" for part in md.relative_to(ROOT).parts):
         continue
-    for target in LINK.findall(md.read_text(encoding="utf-8")):
+    for target in LINK.findall(CODE.sub("", md.read_text(encoding="utf-8"))):
+        target = url_unquote(target)  # my%20file.md is the file "my file.md"
         if re.match(r"^[a-zA-Z]+:", target) or target.startswith("//") or target.startswith("mailto:"):
             continue
         if not (md.parent / target).exists():
