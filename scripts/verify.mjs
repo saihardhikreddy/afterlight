@@ -49,10 +49,17 @@ for (const demo of demos) {
     page.on("console", m => { if (m.type() === "error") problems.push(`console: ${m.text()}`); });
     page.on("pageerror", e => problems.push(`pageerror: ${e.message}`));
     page.on("response", r => { if (r.status() >= 400) problems.push(`${r.status()} ${r.url()}`); });
-    await page.goto(`${base}/${rel}/`, { waitUntil: "load" });
-    await page.waitForTimeout(Number(process.env.SETTLE_MS || 3500));
     const shot = join(outDir, `${rel.replaceAll("/", "__")}--${vp.name}.png`);
-    await page.screenshot({ path: shot });
+    try {
+      await page.goto(`${base}/${rel}/`, { waitUntil: "load" });
+      await page.waitForTimeout(Number(process.env.SETTLE_MS || 3500));
+      // Software WebGL (SwiftShader) on a small CI runner can take well over the default 30 s
+      // to produce one frame of a heavy scene, so allow longer before calling it a failure.
+      await page.screenshot({ path: shot, timeout: Number(process.env.SHOT_TIMEOUT_MS || 120000) });
+    } catch (e) {
+      // Report it and carry on, so one stuck demo doesn't hide the results of the rest.
+      problems.push(`${e.name}: ${e.message.split("\n")[0]}`);
+    }
     const status = problems.length ? "FAIL" : "ok";
     if (problems.length) failed++;
     console.log(`${status.padEnd(4)} ${rel} @ ${vp.name} -> ${relative(root, shot)}`);
