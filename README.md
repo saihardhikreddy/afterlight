@@ -61,9 +61,12 @@ Then open `http://127.0.0.1:4173/skills/webgl/sentinel-ring-station/demo/` (the 
 To screenshot every demo at desktop and phone size and fail on console errors or missing files:
 
 ```bash
-npm i -D playwright   # once
-node scripts/verify.mjs
+npm i --no-save playwright && npx playwright install chromium   # once: the package and its browser
+node scripts/verify.mjs                                          # every demo
+node scripts/verify.mjs skills/webgl/contour-band-sphere/demo    # or just one
 ```
+
+Screenshots land in `.verify/`. `SETTLE_MS` (default 3500) is how long a page runs before its screenshot, and `SHOT_TIMEOUT_MS` (default 120000) how long one screenshot may take: software WebGL on a slow machine can need well over the default 30 s.
 
 ## Adding a skill
 
@@ -88,7 +91,7 @@ afterlight/
 ├── scripts/
 │   ├── check_skills.py       # frontmatter and link lint
 │   └── verify.mjs            # Playwright screenshots + console/404 check
-└── .github/workflows/        # CI for the lint
+└── .github/workflows/        # CI: the skill lint and the demo screenshots
 ```
 
 ## License
