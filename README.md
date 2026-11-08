@@ -74,7 +74,7 @@ Screenshots land in `.verify/`. `SETTLE_MS` (default 3500) is how long a page ru
 2. Write the description as "what it does. Use when ...". That one line decides whether an agent picks the skill up.
 3. Keep the body to steps, defaults and pitfalls. Put long background in `REFERENCES.md` next to it.
 4. If the skill produces something visual, add `demo/index.html` (self-contained) and `demo/PROMPT.md` (the exact prompt that recreates it).
-5. Run `python3 scripts/check_skills.py` before committing. CI runs it too.
+5. Run `python3 scripts/check_skills.py` before committing. CI runs it too. It also fails a demo that loads anything from the network (a CDN script, a web font) or a local file that isn't there.
 
 ## Structure
 
@@ -89,7 +89,7 @@ afterlight/
 ├── prompts/                  # paste-ready build prompts
 ├── templates/                # skill template and single-file page starter
 ├── scripts/
-│   ├── check_skills.py       # frontmatter and link lint
+│   ├── check_skills.py       # frontmatter, link and demo self-containment lint
 │   └── verify.mjs            # Playwright screenshots + console/404 check
 └── .github/workflows/        # CI: the skill lint and the demo screenshots
 ```
