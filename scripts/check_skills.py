@@ -2,6 +2,7 @@
 """Lint every SKILL.md: frontmatter present, name matches folder, description says when to use it,
 and relative Markdown links resolve. Also check that demos are self-contained: nothing loaded from
 the network (CDNs, fonts) and every local file they load exists. Exits non-zero on any problem."""
+import json
 import re
 import sys
 from pathlib import Path
@@ -77,24 +78,44 @@ LOADS = [
     re.compile(r"""(?:\bimport\b[^'"`;]*?\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]"""),
     re.compile(r"""url\(\s*['"]?([^'")]+)"""),
 ]
+IMPORT_MAP = re.compile(r"<script\b[^>]*\btype\s*=\s*[\"']importmap[\"'][^>]*>(.*?)</script>", re.I | re.S)
+
+
+def import_map_targets(text, rel):
+    """URLs an import map points bare module names at. A bare import is only as offline as these."""
+    targets = []
+    for block in IMPORT_MAP.findall(text):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            problems.append(f"{rel}: import map is not valid JSON")
+            continue
+        scopes = [data.get("imports", {})] + list(data.get("scopes", {}).values())
+        targets += [v for scope in scopes for v in scope.values() if isinstance(v, str)]
+    return targets
+
+
 for demo_file in sorted((ROOT / "skills").rglob("demo/**/*")):
     if demo_file.suffix not in {".html", ".js", ".mjs", ".css"} or "vendor" in demo_file.parts:
         continue
     text = CODE_COMMENT.sub("", demo_file.read_text(encoding="utf-8"))
     rel = demo_file.relative_to(ROOT)
-    for pattern in LOADS:
-        for target in pattern.findall(text):
-            target = target.strip()
-            if re.match(r"^(https?:)?//", target):
-                problems.append(f"{rel}: loads {target} from the network; demos must be self-contained")
-            elif re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target) or target.startswith("#") or "${" in target:
-                continue  # data:, blob:, an in-page anchor or a template string
-            elif not target.startswith((".", "/")) and pattern is LOADS[2]:
-                continue  # a bare module name ("three") resolved by an import map
-            else:
-                path = (demo_file.parent / url_unquote(target.split("?")[0].split("#")[0]))
-                if not path.exists():
-                    problems.append(f"{rel}: loads {target}, which does not exist")
+    found = [(pattern, t) for pattern in LOADS for t in pattern.findall(text)]
+    found += [(IMPORT_MAP, t) for t in import_map_targets(text, rel)]
+    for pattern, target in found:
+        target = target.strip()
+        if re.match(r"^(https?:)?//", target):
+            problems.append(f"{rel}: loads {target} from the network; demos must be self-contained")
+        elif target.startswith("/"):
+            problems.append(f"{rel}: loads {target} from the filesystem root; use a relative path")
+        elif re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target) or target.startswith("#") or "${" in target:
+            continue  # data:, blob:, an in-page anchor or a template string
+        elif not target.startswith(".") and pattern is LOADS[2]:
+            continue  # a bare module name ("three") resolved by an import map
+        else:
+            path = (demo_file.parent / url_unquote(target.split("?")[0].split("#")[0]))
+            if not path.exists():
+                problems.append(f"{rel}: loads {target}, which does not exist")
 
 for p in problems:
     print(p)
