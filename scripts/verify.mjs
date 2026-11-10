@@ -3,7 +3,7 @@
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { readFile, readdir, mkdir } from "node:fs/promises";
-import { extname, join, resolve, relative } from "node:path";
+import { extname, join, resolve, relative, sep } from "node:path";
 
 // createRequire so a global/NODE_PATH install works as well as a local one.
 const { chromium } = createRequire(import.meta.url)("playwright");
@@ -28,7 +28,8 @@ const server = createServer(async (req, res) => {
   let path = decodeURIComponent(new URL(req.url, "http://x").pathname);
   if (path.endsWith("/")) path += "index.html";
   const file = join(root, path);
-  if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
+  // root + sep, not just root: "/../afterlight-old/x" would otherwise pass for a sibling folder.
+  if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
   try { res.writeHead(200, { "content-type": types[extname(file)] || "application/octet-stream" }).end(await readFile(file)); }
   catch { res.writeHead(404).end(); }
 }).listen(0, "127.0.0.1");
@@ -56,6 +57,9 @@ for (const demo of demos) {
       // Software WebGL (SwiftShader) on a small CI runner can take well over the default 30 s
       // to produce one frame of a heavy scene, so allow longer before calling it a failure.
       await page.screenshot({ path: shot, timeout: Number(process.env.SHOT_TIMEOUT_MS || 120000) });
+      // A page wider than the viewport scrolls sideways on a phone; the screenshot alone doesn't show it.
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (overflow > 1) problems.push(`page is ${overflow}px wider than the ${vp.width}px viewport (horizontal scroll)`);
     } catch (e) {
       // Report it and carry on, so one stuck demo doesn't hide the results of the rest.
       problems.push(`${e.name}: ${e.message.split("\n")[0]}`);
