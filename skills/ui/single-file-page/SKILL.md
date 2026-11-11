@@ -14,7 +14,7 @@ Start from [templates/single-file-page.html](../../../templates/single-file-page
 - Design tokens as CSS custom properties on `:root`. Set an explicit `body` background.
 - `<meta name="viewport">`, a real `<title>`, `lang` on `<html>`.
 - Canvas pieces: cap device pixel ratio at 2, handle resize, show a readable fallback if WebGL/WebGL2 is missing, and give the canvas `role="img"` plus an `aria-label` describing what it shows.
-- Respect `prefers-reduced-motion`: keep the full content and a finished static state, drop the motion.
+- Respect `prefers-reduced-motion`: keep the full content and a finished static state, drop the motion. Listen for its `change` event too, since it can be switched while the page is open; the template shows how.
 - Controls are real `<button>`s with a visible `:focus-visible` style.
 
 ## Before calling it done

@@ -42,7 +42,10 @@
 <script>
 "use strict";
 const canvas = document.getElementById("c");
-const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The setting can change while the page is open (an OS toggle), so follow it, not just its first value.
+const motionQuery = matchMedia("(prefers-reduced-motion: reduce)");
+let reduceMotion = motionQuery.matches;
+motionQuery.addEventListener("change", (e) => { reduceMotion = e.matches; });
 
 let dpr = 1;
 function resize() {
@@ -53,11 +56,14 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-// Start animation clocks on the first frame, not at script time.
-let start = null;
+// Animation time in seconds. It starts on the first frame, not at script time, and only runs
+// while motion is allowed, so turning motion back on resumes instead of jumping ahead. Steps are
+// capped at 0.1 s: after a hidden tab or a long stall, frames carry on instead of skipping.
+let t = 0;
+let last = null;
 function frame(now) {
-  if (start === null) start = now;
-  const t = reduceMotion ? 0 : (now - start) / 1000;
+  if (last !== null && !reduceMotion) t += Math.min(now - last, 100) / 1000;
+  last = now;
   // draw(t)
   requestAnimationFrame(frame);
 }
