@@ -4,10 +4,13 @@ import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { readFile, readdir, mkdir } from "node:fs/promises";
 import { extname, join, resolve, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // createRequire so a global/NODE_PATH install works as well as a local one.
 const { chromium } = createRequire(import.meta.url)("playwright");
-const root = resolve(new URL("..", import.meta.url).pathname);
+// fileURLToPath, not .pathname: the pathname keeps %20 for spaces and gives "/C:/..." on
+// Windows, so the server found no files in a folder like "My Projects" or on any Windows drive.
+const root = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
 const outDir = join(root, ".verify");
 const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
   ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml",
@@ -30,8 +33,13 @@ const server = createServer(async (req, res) => {
   const file = join(root, path);
   // root + sep, not just root: "/../afterlight-old/x" would otherwise pass for a sibling folder.
   if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
-  try { res.writeHead(200, { "content-type": types[extname(file)] || "application/octet-stream" }).end(await readFile(file)); }
-  catch { res.writeHead(404).end(); }
+  // Read before writing the head: writeHead(200) went out first, so a missing file then tried
+  // to send a 404 on top of it and crashed the whole run with ERR_HTTP_HEADERS_SENT, instead of
+  // reporting the 404 against the demo that asked for it.
+  let body;
+  try { body = await readFile(file); }
+  catch { res.writeHead(404).end(); return; }
+  res.writeHead(200, { "content-type": types[extname(file)] || "application/octet-stream" }).end(body);
 }).listen(0, "127.0.0.1");
 await new Promise(r => server.once("listening", r));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -43,7 +51,7 @@ await mkdir(outDir, { recursive: true });
 let failed = 0;
 
 for (const demo of demos) {
-  const rel = relative(root, demo);
+  const rel = relative(root, demo).split(sep).join("/");   // URL and file-name form on Windows too
   for (const vp of viewports) {
     const page = await browser.newPage({ viewport: vp });
     const problems = [];

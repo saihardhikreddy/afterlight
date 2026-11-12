@@ -15,7 +15,7 @@ node scripts/verify.mjs path/to/demo        # one folder with an index.html
 SETTLE_MS=1000 node scripts/verify.mjs ...  # capture mid-animation
 ```
 
-It serves the repo locally, opens each page at 1280x720 and 390x844, waits, saves PNGs to `.verify/`, and exits non-zero on any console error, uncaught exception or HTTP status of 400 or more.
+It serves the repo locally, opens each page at 1280x720 and 390x844, waits, saves PNGs to `.verify/`, and exits non-zero on any console error, uncaught exception, HTTP status of 400 or more, or a page wider than the viewport (sideways scrolling on a phone).
 
 Needs Playwright (`npm i -D playwright`, or a global install). WebGL runs through SwiftShader, so it works on CI and headless machines; expect it to be slower than a GPU.
 
