@@ -18,6 +18,15 @@ problems = []
 verbose = "-v" in sys.argv or "--verbose" in sys.argv
 
 skills = sorted((ROOT / "skills").rglob("SKILL.md"))
+
+# Layout: skills/<category>/<skill-name>/SKILL.md. A skill folder without its SKILL.md was never
+# looked at (only SKILL.md files were), so it passed while no agent could ever load it.
+for folder in sorted(p for p in (ROOT / "skills").glob("*/*") if p.is_dir()):
+    if not (folder / "SKILL.md").is_file():
+        problems.append(f"{folder.relative_to(ROOT)}: skill folder has no SKILL.md")
+for skill in skills:
+    if len(skill.relative_to(ROOT / "skills").parts) != 3:
+        problems.append(f"{skill.relative_to(ROOT)}: SKILL.md belongs in skills/<category>/<skill-name>/")
 for skill in skills:
     rel = skill.relative_to(ROOT)
     before = len(problems)
