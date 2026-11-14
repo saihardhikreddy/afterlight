@@ -66,6 +66,14 @@ for skill in skills:
         problems.append(f"{rel}: description should say 'Use when ...'")
     if len(desc) > 1024:
         problems.append(f"{rel}: description over 1024 characters")
+    # Limits the skill loaders enforce on upload: a skill that breaks them is refused there
+    # even though it reads fine here.
+    if len(name) > 64:
+        problems.append(f"{rel}: name over 64 characters")
+    if re.search(r"anthropic|claude", name):
+        problems.append(f"{rel}: name may not contain the reserved words 'anthropic' or 'claude'")
+    if re.search(r"<[^>]*>", desc):
+        problems.append(f"{rel}: description may not contain XML/HTML tags (angle brackets)")
 
     if verbose and len(problems) == before:  # this skill added no problems
         print(f"  [OK] verified skill: {skill.parent.name}")
