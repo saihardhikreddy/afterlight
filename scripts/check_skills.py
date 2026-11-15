@@ -78,6 +78,15 @@ for skill in skills:
     if verbose and len(problems) == before:  # this skill added no problems
         print(f"  [OK] verified skill: {skill.parent.name}")
 
+# Skills are portable (CLAUDE.md): a path into one person's home folder works on their machine
+# only, and an agent elsewhere follows it to nothing. Checked in skill files and demos alike.
+MACHINE_PATH = re.compile(r"(?:/Users/|/home/)(?!user\b|you\b|name\b|me\b)[A-Za-z0-9._-]+/|\b[A-Za-z]:[\\/]Users[\\/]", re.I)
+for f in sorted((ROOT / "skills").rglob("*")):
+    if f.is_file() and f.suffix in {".md", ".html", ".js", ".mjs", ".css", ".py", ".json"} and "vendor" not in f.parts:
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            for hit in MACHINE_PATH.finditer(line):
+                problems.append(f"{f.relative_to(ROOT)}:{n}: machine-specific path '{hit.group(0)}'; skills must be portable")
+
 for md in sorted(ROOT.rglob("*.md")):
     if any(part.startswith(".") or part == "node_modules" for part in md.relative_to(ROOT).parts):
         continue
