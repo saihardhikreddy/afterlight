@@ -2,8 +2,8 @@
 // page errors or failed requests. Usage: node scripts/verify.mjs [demo-dir ...]
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { readFile, readdir, mkdir } from "node:fs/promises";
-import { extname, join, resolve, relative, sep } from "node:path";
+import { readFile, readdir, mkdir, stat } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // createRequire so a global/NODE_PATH install works as well as a local one.
@@ -44,7 +44,21 @@ const server = createServer(async (req, res) => {
 await new Promise(r => server.once("listening", r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
-const demos = process.argv.length > 2 ? process.argv.slice(2).map(d => resolve(d)) : await findDemos(join(root, "skills"));
+// A demo argument may be the demo folder or its index.html. Check each one up front: a path
+// outside the repo or without an index.html used to be served as a plain 404 at some other URL,
+// which read like a broken demo rather than a mistyped argument.
+async function demoArg(arg) {
+  let dir = resolve(arg);
+  if (basename(dir) === "index.html") dir = dirname(dir);
+  if (dir !== root && !dir.startsWith(root + sep)) throw new Error(`${arg}: not inside ${root}`);
+  if (!(await stat(join(dir, "index.html")).catch(() => null))?.isFile()) throw new Error(`${arg}: no index.html there`);
+  return dir;
+}
+let demos;
+try {
+  demos = process.argv.length > 2 ? await Promise.all(process.argv.slice(2).map(demoArg)) : await findDemos(join(root, "skills"));
+} catch (e) { console.error(e.message); process.exit(2); }
+if (!demos.length) { console.error("No demos found (looked for */demo/index.html under skills/)."); process.exit(2); }
 const viewports = [{ name: "desktop", width: 1280, height: 720 }, { name: "phone", width: 390, height: 844 }];
 const browser = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
 await mkdir(outDir, { recursive: true });

@@ -63,7 +63,7 @@ To screenshot every demo at desktop and phone size and fail on console errors or
 ```bash
 npm i --no-save playwright && npx playwright install chromium   # once: the package and its browser
 node scripts/verify.mjs                                          # every demo
-node scripts/verify.mjs skills/webgl/contour-band-sphere/demo    # or just one
+node scripts/verify.mjs skills/webgl/contour-band-sphere/demo    # or just one (its folder or its index.html)
 ```
 
 Screenshots land in `.verify/`. `SETTLE_MS` (default 3500) is how long a page runs before its screenshot, and `SHOT_TIMEOUT_MS` (default 120000) how long one screenshot may take: software WebGL on a slow machine can need well over the default 30 s.
