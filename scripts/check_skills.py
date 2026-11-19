@@ -9,7 +9,11 @@ from pathlib import Path
 from urllib.parse import unquote as url_unquote
 
 ROOT = Path(__file__).resolve().parent.parent
-LINK = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
+LINK = re.compile(r"\]\(([^)#\s<]+)(?:#[^)]*)?(?:\s[^)]*)?\)")
+# The other two ways CommonMark writes a link target, which the check above never saw:
+# [text](<my file.md>) and reference definitions, "[ref]: path.md" on a line of their own.
+LINK_ANGLE = re.compile(r"\]\(<([^>#\n]+)(?:#[^>\n]*)?>")
+LINK_REF = re.compile(r"^ {0,3}\[[^\]\n]+\]:[ \t]*<?([^\s>#]+)", re.M)
 # Code is shown, not followed: a link-shaped example inside ``` fences or `inline code` isn't a link.
 CODE = re.compile(r"^(```|~~~).*?^\1[^\n]*$|`[^`\n]+`", re.S | re.M)
 # /* block */ and <!-- HTML --> comments; // line comments only at the start of a line, so URLs survive.
@@ -90,7 +94,8 @@ for f in sorted((ROOT / "skills").rglob("*")):
 for md in sorted(ROOT.rglob("*.md")):
     if any(part.startswith(".") or part == "node_modules" for part in md.relative_to(ROOT).parts):
         continue
-    for target in LINK.findall(CODE.sub("", md.read_text(encoding="utf-8"))):
+    prose = CODE.sub("", md.read_text(encoding="utf-8"))
+    for target in LINK.findall(prose) + LINK_ANGLE.findall(prose) + LINK_REF.findall(prose):
         target = url_unquote(target)  # my%20file.md is the file "my file.md"
         if re.match(r"^[a-zA-Z]+:", target) or target.startswith("//") or target.startswith("mailto:"):
             continue
