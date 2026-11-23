@@ -109,6 +109,20 @@ LOADS = [
     re.compile(r"""(?:\bimport\b[^'"`;]*?\bfrom\s*|\bimport\s*\(?\s*)['"]([^'"]+)['"]"""),
     re.compile(r"""url\(\s*['"]?([^'")]+)"""),
 ]
+# <img srcset> and <picture>'s <source srcset> name one or more candidates, each "url <descriptor>"
+# and comma-separated; a CDN URL hidden in a srcset slips past the src-only check above.
+SRCSET_ATTR = re.compile(r"<(?:img|source)\b[^>]*?\bsrcset\s*=\s*[\"']([^\"']+)", re.I)
+
+
+def srcset_urls(text):
+    """The URLs in every srcset attribute, dropping the 1x/640w descriptors."""
+    urls = []
+    for value in SRCSET_ATTR.findall(text):
+        for candidate in value.split(","):
+            parts = candidate.split()
+            if parts:
+                urls.append(parts[0])
+    return urls
 IMPORT_MAP = re.compile(r"<script\b[^>]*\btype\s*=\s*[\"']importmap[\"'][^>]*>(.*?)</script>", re.I | re.S)
 
 
@@ -133,6 +147,7 @@ for demo_file in sorted((ROOT / "skills").rglob("demo/**/*")):
     rel = demo_file.relative_to(ROOT)
     found = [(pattern, t) for pattern in LOADS for t in pattern.findall(text)]
     found += [(IMPORT_MAP, t) for t in import_map_targets(text, rel)]
+    found += [(SRCSET_ATTR, t) for t in srcset_urls(text)]
     for pattern, target in found:
         target = target.strip()
         if re.match(r"^(https?:)?//", target):
