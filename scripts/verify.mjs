@@ -72,6 +72,13 @@ for (const demo of demos) {
     page.on("console", m => { if (m.type() === "error") problems.push(`console: ${m.text()}`); });
     page.on("pageerror", e => problems.push(`pageerror: ${e.message}`));
     page.on("response", r => { if (r.status() >= 400) problems.push(`${r.status()} ${r.url()}`); });
+    // A request that never gets a response (DNS failure, refused connection, blocked) fires
+    // requestfailed, not response, so it was never counted. ERR_ABORTED is the browser cancelling
+    // a request itself (a media range request, a page closing), not a broken demo.
+    page.on("requestfailed", r => {
+      const err = r.failure()?.errorText || "failed";
+      if (!err.includes("ERR_ABORTED")) problems.push(`request failed: ${err} ${r.url()}`);
+    });
     const shot = join(outDir, `${rel.replaceAll("/", "__")}--${vp.name}.png`);
     try {
       await page.goto(`${base}/${rel}/`, { waitUntil: "load" });
